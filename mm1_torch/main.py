@@ -230,7 +230,7 @@ class DAbstractor(nn.Module):
         dim: int,
         depth: int,
         heads: int,
-        dropout: int,
+        dropout: float = 0.1,
         dim_head: int = 32,
         seq_len: int = 2048,
         *args,
