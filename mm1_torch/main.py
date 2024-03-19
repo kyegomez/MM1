@@ -451,15 +451,54 @@ class DecoderLLM(nn.Module):
         for attn_layer, expert_layer in zip(
             self.attn_layers, self.expert_layers
         ):
-            # print(type(x), x.shape)
-            attn = attn_layer(x)
-            attn += x
-            # expert = expert_layer(x)
-            # print(type(expert))
-        return x  # + expert
+            attn, _ = attn_layer(x)
+            attn = attn + x
+            expert = expert_layer(x)
+            x = attn + expert
+
+        return x
 
 
 class MM1(nn.Module):
+    """
+    MM1 class represents the MM1 model architecture.
+
+    Args:
+        dim (int): The dimension of the model.
+        depth (int): The depth of the model.
+        heads (int): The number of attention heads in the model.
+        dim_head (int, optional): The dimension of each attention head. Defaults to 64.
+        num_experts (int, optional): The number of experts in the model. Defaults to 8.
+        dropout (float, optional): The dropout rate. Defaults to 0.1.
+        num_experts_per_tok (int, optional): The number of experts per token. Defaults to 4.
+        image_size (int, optional): The size of the input image. Defaults to 224.
+        patch_size (int, optional): The size of each image patch. Defaults to 16.
+        encoder_dim (int, optional): The dimension of the encoder. Defaults to 256.
+        encoder_depth (int, optional): The depth of the encoder. Defaults to 3.
+        encoder_heads (int, optional): The number of attention heads in the encoder. Defaults to 4.
+        num_tokens (int, optional): The number of tokens in the embedding layer. Defaults to 20000.
+
+    Attributes:
+        dim (int): The dimension of the model.
+        depth (int): The depth of the model.
+        heads (int): The number of attention heads in the model.
+        dim_head (int): The dimension of each attention head.
+        num_experts (int): The number of experts in the model.
+        dropout (float): The dropout rate.
+        num_experts_per_tok (int): The number of experts per token.
+        image_size (int): The size of the input image.
+        patch_size (int): The size of each image patch.
+        encoder (CAbstractor): The encoder module.
+        decoder (DecoderLLM): The decoder module.
+        vit (ViTransformerWrapper): The vision encoder module.
+        c_abstractor (CAbstractor): The C abstractor module.
+        embedding (nn.Embedding): The embedding layer.
+
+    Methods:
+        forward(text, image): Performs forward pass of the MM1 model.
+
+    """
+
     def __init__(
         self,
         dim: int,
@@ -526,6 +565,17 @@ class MM1(nn.Module):
         self.embedding = nn.Embedding(num_tokens, dim)
 
     def forward(self, text: Tensor, image: Tensor):
+        """
+        Performs forward pass of the MM1 model.
+
+        Args:
+            text (Tensor): The input text tensor.
+            image (Tensor): The input image tensor.
+
+        Returns:
+            Tensor: The output tensor of the model.
+
+        """
         # Embed tokens
         x = self.embedding(text)
 

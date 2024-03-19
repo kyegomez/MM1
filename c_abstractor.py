@@ -1,4 +1,4 @@
-import torch 
+import torch
 from mm1_torch.main import CAbstractor
 
 # Tensors
