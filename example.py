@@ -1,5 +1,5 @@
 import torch
-from mm1.main import MM1
+from mm1_torch.main import MM1
 
 # Tensors
 x = torch.randint(0, 100, (1, 512))

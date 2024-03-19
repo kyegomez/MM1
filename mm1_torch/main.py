@@ -5,7 +5,7 @@ from torch import Tensor, nn
 from torch.nn import Module
 from zeta.nn import img_to_text
 from zeta.nn.attention import Attention
-from mm1.moe import MoELayer
+from mm1_torch.moe import MoELayer
 from zeta.structs import ViTransformerWrapper, Encoder
 
 
@@ -456,7 +456,7 @@ class DecoderLLM(nn.Module):
             attn += x
             # expert = expert_layer(x)
             # print(type(expert))
-        return x #+ expert
+        return x  # + expert
 
 
 class MM1(nn.Module):
@@ -528,10 +528,10 @@ class MM1(nn.Module):
     def forward(self, text: Tensor, image: Tensor):
         # Embed tokens
         x = self.embedding(text)
-        
+
         t_b, t_s, t_d = x.shape
         i_b, i_c, i_h, i_w = image.shape
-        
+
         print(f"Text: {x.shape}")
         print(f"Image: {image.shape}")
 

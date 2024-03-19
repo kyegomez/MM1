@@ -3,7 +3,7 @@ requires = ["poetry-core>=1.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
-name = "mm1"
+name = "mm1-torch"
 version = "0.0.1"
 description = "MM1 - Pytorch"
 license = "MIT"
