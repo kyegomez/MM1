@@ -27,22 +27,26 @@ model = MM1(
     dropout=0.1,
     num_experts=4,
     num_experts_per_tok=2,
+    encoder_dim=512,
+    encoder_depth=12,
+    encoder_heads=8,
 )
 
 
 # Forward
 out = model(x, img)
 print(out.shape)  # torch.Size([2, 3, 512])
+print(out)
 ```
 
 ### `CAbstractor`
 
 ```python
-import torch 
+import torch
 from mm1_torch.main import CAbstractor
 
 # Tensors
-x = torch.randn(1, 3, 224, 224)
+x = torch.randn(1, 100, 512)
 
 # Create a model
 model = CAbstractor(
@@ -54,8 +58,7 @@ model = CAbstractor(
 
 # Forward
 out = model(x)
-print(out.shape)  # torch.Size([2, 3, 512])
-
+print(out.shape)
 
 ```
 
