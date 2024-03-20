@@ -7,7 +7,8 @@ from zeta.nn.attention import Attention
 from zeta.structs import Encoder, ViTransformerWrapper
 from mm1_torch.resblock_text import TextResBlock1d
 from mm1_torch.moe import MoELayer
-
+from zeta.nn import OutputHead, threed_to_text
+from zeta.nn import FeedForward
 
 # constants
 def exists(x):
@@ -25,135 +26,6 @@ def identity(t, *args, **kwargs):
 
 
 # small helper modules
-
-
-class Residual(Module):
-    def __init__(self, fn):
-        super().__init__()
-        self.fn = fn
-
-    def forward(self, x, *args, **kwargs):
-        return self.fn(x, *args, **kwargs) + x
-
-
-def Upsample(dim, dim_out=None):
-    return nn.Sequential(
-        nn.Upsample(scale_factor=2, mode="nearest"),
-        nn.Conv2d(dim, default(dim_out, dim), 3, padding=1),
-    )
-
-
-def Downsample(dim, dim_out=None):
-    return nn.Sequential(
-        Rearrange("b c (h p1) (w p2) -> b (c p1 p2) h w", p1=2, p2=2),
-        nn.Conv2d(dim * 4, default(dim_out, dim), 1),
-    )
-
-
-# building block modules
-
-
-class Block(Module):
-    """
-    A block module that performs convolution, normalization, activation, and scaling/shift operations.
-
-    Args:
-        dim (int): The number of input channels.
-        dim_out (int): The number of output channels.
-        groups (int, optional): The number of groups to separate the channels into. Defaults to 1.
-
-    Attributes:
-        proj (nn.Conv2d): The convolutional layer.
-        norm (nn.GroupNorm): The group normalization layer.
-        act (nn.SiLU): The activation function.
-
-    Methods:
-        forward(x, scale_shift=None): Performs the forward pass of the block module.
-
-    """
-
-    def __init__(self, dim, dim_out, groups=1):
-        super().__init__()
-        self.proj = nn.Conv2d(dim, dim_out, 3, padding=1)
-        self.norm = nn.GroupNorm(groups, dim_out)
-        self.act = nn.SiLU()
-
-    def forward(self, x, scale_shift=None):
-        """
-        Performs the forward pass of the block module.
-
-        Args:
-            x (torch.Tensor): The input tensor.
-            scale_shift (tuple, optional): A tuple containing the scale and shift values for scaling/shift operations. Defaults to None.
-
-        Returns:
-            torch.Tensor: The output tensor after passing through the block module.
-
-        """
-        x = self.proj(x)
-        x = self.norm(x)
-
-        if exists(scale_shift):
-            scale, shift = scale_shift
-            x = x * (scale + 1) + shift
-
-        x = self.act(x)
-        return x
-
-
-class ResnetBlock(Module):
-    """
-    Residual block for a ResNet architecture.
-
-    Args:
-        dim (int): Input dimension.
-        dim_out (int): Output dimension.
-        time_emb_dim (int, optional): Dimension of the time embedding. Defaults to None.
-        groups (int, optional): Number of groups for grouped convolution. Defaults to 8.
-    """
-
-    def __init__(self, dim, dim_out, *, time_emb_dim=None, groups=1):
-        super().__init__()
-        self.mlp = (
-            nn.Sequential(
-                nn.SiLU(), nn.Linear(time_emb_dim, dim_out * 2)
-            )
-            if exists(time_emb_dim)
-            else None
-        )
-
-        self.block1 = Block(dim, dim_out, groups=groups)
-        self.block2 = Block(dim_out, dim_out, groups=groups)
-        self.res_conv = (
-            nn.Conv2d(dim, dim_out, 1)
-            if dim != dim_out
-            else nn.Identity()
-        )
-
-    def forward(self, x, time_emb=None):
-        """
-        Forward pass of the ResnetBlock.
-
-        Args:
-            x (torch.Tensor): Input tensor.
-            time_emb (torch.Tensor, optional): Time embedding tensor. Defaults to None.
-
-        Returns:
-            torch.Tensor: Output tensor.
-        """
-
-        scale_shift = None
-        if exists(self.mlp) and exists(time_emb):
-            time_emb = self.mlp(time_emb)
-            time_emb = rearrange(time_emb, "b c -> b c 1 1")
-            scale_shift = time_emb.chunk(2, dim=1)
-
-        h = self.block1(x, scale_shift=scale_shift)
-
-        h = self.block2(h)
-
-        return h + self.res_conv(x)
-
 
 def posemb_sincos_2d(
     h: int,
@@ -247,7 +119,6 @@ class DAbstractor(nn.Module):
         # Positional Embedding
         # TODO: Implement
 
-        # Adaptive pool
 
         # Attention
         # self.attn = MultiQueryAttention(dim, heads, *args, **kwargs)
@@ -280,12 +151,9 @@ class DAbstractor(nn.Module):
         b, s, d = x.shape
 
         # Positional Embedding
-        # position_embeds = posemb_sincos_2d(h, w, self.dim)
-        # print(position_embeds.shape)
 
         # Adaptive pool
-        x = nn.AdaptiveAvgPool1d((s, d))(x)
-        print(x.shape)
+        x = nn.AdaptiveAvgPool1d(d)(x)
 
         # Attention
         x = self.attn(x)
@@ -340,7 +208,6 @@ class CAbstractor(nn.Module):
 
         # Average pooling
         x = nn.AdaptiveAvgPool1d(d)(x)
-        print(x.shape)
 
         # ResnetBlocks
         for layer in self.layers:
@@ -388,6 +255,7 @@ class DecoderLLM(nn.Module):
         num_experts: int,
         dropout: float,
         num_experts_per_tok: int = 4,
+        use_feedforward: bool = True,
         *args,
         **kwargs,
     ):
@@ -423,6 +291,15 @@ class DecoderLLM(nn.Module):
                 for _ in range(self.depth)
             ]
         )
+        
+        
+        # Expert layers
+        self.ffn_layers = nn.ModuleList(
+            [
+                FeedForward(dim, dim, 4, post_act_ln=True, swish=True)
+                for _ in range(self.depth)
+            ]
+        )
 
     def forward(self, x: Tensor) -> Tensor:
         """
@@ -435,12 +312,12 @@ class DecoderLLM(nn.Module):
             Tensor: The output tensor.
 
         """
-        for attn_layer, expert_layer in zip(
-            self.attn_layers, self.expert_layers
+        for attn_layer, ffn in zip(
+            self.attn_layers, self.ffn_layers
         ):
             attn, _ = attn_layer(x)
             attn = attn + x
-            expert = expert_layer(x)
+            expert = ffn(attn)
             x = attn + expert
 
         return x
@@ -501,6 +378,8 @@ class MM1(nn.Module):
         encoder_depth: int = 3,
         encoder_heads: int = 4,
         num_tokens: int = 20000,
+        return_logits: bool = True,
+        return_embeddings: bool = False,
         *args,
         **kwargs,
     ):
@@ -514,6 +393,8 @@ class MM1(nn.Module):
         self.num_experts_per_tok = num_experts_per_tok
         self.image_size = image_size
         self.patch_size = patch_size
+        self.return_logits = return_logits
+        self.return_embeddings = return_embeddings
 
         # Encoder
         self.encoder = CAbstractor(dim, depth, heads)
@@ -527,6 +408,8 @@ class MM1(nn.Module):
             num_experts,
             dropout,
             num_experts_per_tok,
+            *args,
+            **kwargs,
         )
 
         # Vision Encoder
@@ -544,7 +427,7 @@ class MM1(nn.Module):
         # Embed the tokens
         self.embedding = nn.Embedding(num_tokens, dim)
 
-    def forward(self, text: Tensor, image: Tensor):
+    def forward(self, text: Tensor, image: Tensor, *args, **kwargs):
         """
         Performs forward pass of the MM1 model.
 
@@ -559,29 +442,35 @@ class MM1(nn.Module):
         # Embed tokens
         x = self.embedding(text)
 
+        # Get shapes
         t_b, t_s, t_d = x.shape
         i_b, i_c, i_h, i_w = image.shape
 
         print(f"Text: {x.shape}")
         print(f"Image: {image.shape}")
 
-        # Pass tokens through decoder
-        # print(type(x), x)
-        x = self.decoder(x)
-
         # Vision Encoder
-        image = self.vit(image, return_embeddings=True)
+        image = self.vit(
+            image, return_embeddings=True, *args, **kwargs
+        )
+        print(f"Image Embedding: {image.shape}")
+        image = threed_to_text(image, t_s, t_d)
+        print(f"Image reshape: {image.shape}")
 
         # Connector
-        # image = self.c_abstractor(image)
-        # image = nn.AdaptiveAvgPool1d((t_s, t_d))(image)
+        # image = nn.AdaptiveAvgPool1d((t_s, t_d))(image) # 2nd option
         image = CAbstractor(
             self.dim,
             self.depth,
             self.heads,
         )(image)
+        print(f"Image Connector: {image.shape}")
 
         # Decoder
         x = self.decoder(x + image)
 
-        return x
+        if self.return_logits:
+            return OutputHead(self.dim, -1)(x)
+
+        else:
+            return x
