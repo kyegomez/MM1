@@ -3,10 +3,10 @@ from einops import rearrange
 from einops.layers.torch import Rearrange
 from torch import Tensor, nn
 from torch.nn import Module
-from zeta.nn import img_to_text
 from zeta.nn.attention import Attention
+from zeta.structs import Encoder, ViTransformerWrapper
+from mm1_torch.resblock_text import TextResBlock1d
 from mm1_torch.moe import MoELayer
-from zeta.structs import ViTransformerWrapper, Encoder
 
 
 # constants
@@ -276,19 +276,15 @@ class DAbstractor(nn.Module):
             Tensor: The output of the DAbstractor module.
 
         """
-        b, c, h, w = x.shape
+        # b, c, h, w = x.shape
+        b, s, d = x.shape
 
         # Positional Embedding
-        position_embeds = posemb_sincos_2d(h, w, self.dim)
-        print(position_embeds.shape)
+        # position_embeds = posemb_sincos_2d(h, w, self.dim)
+        # print(position_embeds.shape)
 
         # Adaptive pool
-        # x = self.avg_pool(x)
-        x = nn.AdaptiveAvgPool2d((h, w))(x)
-        print(x.shape)
-
-        # Reshape to 3d
-        x = img_to_text(x, self.seq_len, dim=self.dim, norm=True)
+        x = nn.AdaptiveAvgPool1d((s, d))(x)
         print(x.shape)
 
         # Attention
@@ -327,39 +323,30 @@ class CAbstractor(nn.Module):
         self.depth = depth
         self.heads = heads
 
+    def forward(self, x: Tensor):
+        # 3d -- B, S, D
+        b, s, d = x.shape
+
         # Res Blocks
         self.layers = nn.ModuleList([])
+
         for _ in range(self.depth):
-            self.res_block = ResnetBlock(dim, dim, *args, **kwargs)
+            self.res_block = TextResBlock1d(s)
         self.layers.append(self.res_block)
-
-        # Average pooling
-
-    def forward(self, x: Tensor):
-        # B, C, H ,W
-        B, C, H, W = x.shape
 
         # Res Blocks
         for layer in self.layers:
             x = layer(x)
 
         # Average pooling
-        x = nn.AdaptiveAvgPool2d((H, W))(x)
+        x = nn.AdaptiveAvgPool1d(d)(x)
+        print(x.shape)
 
         # ResnetBlocks
         for layer in self.layers:
             x = layer(x)
 
-        return x
-
-
-# x = torch.rand(1, 3, 224, 224)
-# # d_abstractor = DAbstractor(dim=224, depth=3, heads=3, dropout=0.1)
-
-# # print(d_abstractor(x))
-
-# c_abstractor = CBastractor(3, 3, 3)
-# print(c_abstractor(x))
+        return nn.LayerNorm(self.dim)(x)
 
 
 class DecoderLLM(nn.Module):
@@ -554,13 +541,6 @@ class MM1(nn.Module):
             ),
         )
 
-        # C Abstractor
-        self.c_abstractor = CAbstractor(
-            dim,
-            depth,
-            heads,
-        )
-
         # Embed the tokens
         self.embedding = nn.Embedding(num_tokens, dim)
 
@@ -594,7 +574,12 @@ class MM1(nn.Module):
 
         # Connector
         # image = self.c_abstractor(image)
-        image = nn.AdaptiveAvgPool1d((t_s, t_d))(image)
+        # image = nn.AdaptiveAvgPool1d((t_s, t_d))(image)
+        image = CAbstractor(
+            self.dim,
+            self.depth,
+            self.heads,
+        )(image)
 
         # Decoder
         x = self.decoder(x + image)
