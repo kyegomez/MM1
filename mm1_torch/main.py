@@ -1,14 +1,88 @@
 import torch
-from einops import rearrange
-from einops.layers.torch import Rearrange
 from torch import Tensor, nn
-from torch.nn import Module
+from zeta.nn import FeedForward, OutputHead, threed_to_text
 from zeta.nn.attention import Attention
 from zeta.structs import Encoder, ViTransformerWrapper
-from mm1_torch.resblock_text import TextResBlock1d
+
 from mm1_torch.moe import MoELayer
-from zeta.nn import OutputHead, threed_to_text
-from zeta.nn import FeedForward
+from mm1_torch.resblock_text import TextResBlock1d
+
+# from torchscale.component.xmoe.moe_layer import MOELayer
+# from torchscale.component.xmoe.routing import Top2Gate
+# from torchscale.component.feedforward_network import make_experts
+# from torch import dist
+# from typing import Optional
+
+
+
+# def create_moe_layer(
+#     embed_dim: int = 512,
+#     moe_expert_count: int = 4,
+#     moe_gating_use_fp32: bool = True,
+#     moe_second_expert_policy: str = "all",
+#     moe_normalize_gate_prob_before_dropping: bool = True,
+#     moe_eval_capacity_token_fraction: float = 0.5,
+#     use_xmoe: bool = True,
+#     moe_capacity_factor: int = 2,
+#     moe_top2gating: bool = True,
+#     moe_expert_group: Optional[dist.ProcessGroup] = None,
+#     moe_all2all_group: Optional[dist.ProcessGroup] = None,
+#     moe_world_size: int = 3,
+#     moe_all2all_size: int = 1,
+#     *args,
+# ) -> str:
+#     gate = Top2Gate(
+#         embed_dim,
+#         moe_expert_count,
+#         moe_gating_use_fp32,
+#         moe_second_expert_policy,
+#         moe_normalize_gate_prob_before_dropping,
+#         moe_eval_capacity_token_fraction,
+#         use_xmoe=use_xmoe,
+#     )
+#     args = {
+#         "moe_expert_count": moe_expert_count,
+#         "moe_capacity_factor": moe_capacity_factor,
+#         "moe_top2gating": moe_top2gating,
+#         "moe_expert_group": moe_expert_group,
+#         "moe_all2all_group": moe_all2all_group,
+#         "moe_world_size": moe_world_size,
+#         "moe_all2all_size": moe_all2all_size,
+#         "args": args,
+#     }
+
+#     experts = make_experts(
+#         embed_dim=embed_dim, expert_ffn_dim=embed_dim
+#     )
+#     moe_layer = MOELayer(gate, experts, *args)
+#     return moe_layer
+
+
+# x = torch.randn(1, 100, 512)
+
+# # Create a model
+# model = create_moe_layer(
+#     embed_dim=512,
+#     moe_expert_count=4,
+#     moe_gating_use_fp32=True,
+#     moe_second_expert_policy="all",
+#     moe_normalize_gate_prob_before_dropping=True,
+#     moe_eval_capacity_token_fraction=0.5,
+#     use_xmoe=True,
+#     moe_capacity_factor=2,
+#     moe_top2gating=True,
+#     moe_expert_group=None,
+#     moe_all2all_group=None,
+#     moe_world_size=1,
+#     moe_all2all_size=1,
+# )
+
+# # Forward
+# out = model(x)
+
+# print(out.shape)
+# print(out)
+
 
 # constants
 def exists(x):
@@ -26,6 +100,7 @@ def identity(t, *args, **kwargs):
 
 
 # small helper modules
+
 
 def posemb_sincos_2d(
     h: int,
@@ -118,7 +193,6 @@ class DAbstractor(nn.Module):
 
         # Positional Embedding
         # TODO: Implement
-
 
         # Attention
         # self.attn = MultiQueryAttention(dim, heads, *args, **kwargs)
@@ -254,8 +328,9 @@ class DecoderLLM(nn.Module):
         dim_head: int,
         num_experts: int,
         dropout: float,
-        num_experts_per_tok: int = 4,
+        num_experts_per_tok: int = 1,
         use_feedforward: bool = True,
+        use_moe: bool = True,
         *args,
         **kwargs,
     ):
@@ -267,6 +342,8 @@ class DecoderLLM(nn.Module):
         self.num_experts = num_experts
         self.dropout = dropout
         self.num_experts_per_tok = num_experts_per_tok
+        self.use_feedforward = use_feedforward
+        self.use_moe = use_moe
 
         # Attention layers
         self.attn_layers = nn.ModuleList(
@@ -291,8 +368,7 @@ class DecoderLLM(nn.Module):
                 for _ in range(self.depth)
             ]
         )
-        
-        
+
         # Expert layers
         self.ffn_layers = nn.ModuleList(
             [
@@ -312,13 +388,19 @@ class DecoderLLM(nn.Module):
             Tensor: The output tensor.
 
         """
-        for attn_layer, ffn in zip(
-            self.attn_layers, self.ffn_layers
-        ):
-            attn, _ = attn_layer(x)
-            attn = attn + x
-            expert = ffn(attn)
-            x = attn + expert
+        if self.use_feedforward:
+            for attn_layer, ffn in zip(self.attn_layers, self.ffn_layers):
+                attn, _ = attn_layer(x)
+                attn = attn + x
+                expert = ffn(attn)
+                x = attn + expert
+                
+        else: 
+            for attn_layer, expert_layer in zip(self.attn_layers, self.expert_layers):
+                attn, _ = attn_layer(x)
+                attn = attn + x
+                expert = expert_layer(attn)
+                x = attn + expert
 
         return x
 
@@ -380,6 +462,7 @@ class MM1(nn.Module):
         num_tokens: int = 20000,
         return_logits: bool = True,
         return_embeddings: bool = False,
+        use_moe: bool = True,
         *args,
         **kwargs,
     ):
@@ -408,6 +491,7 @@ class MM1(nn.Module):
             num_experts,
             dropout,
             num_experts_per_tok,
+            use_moe=use_moe,
             *args,
             **kwargs,
         )

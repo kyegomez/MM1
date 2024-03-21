@@ -86,33 +86,23 @@ class MoELayer(nn.Module):
         )
 
         results = torch.zeros_like(x)
-
+        
         for i, expert in enumerate(self.experts):
-            batch_idx, nth_expert, _ = torch.where(
-                selected_experts == i
-            )
-            print(batch_idx.shape)
-            print(nth_expert.shape)
-            print(weights.shape)
+            batch_idx, nth_expert, _ = torch.where(selected_experts == i)
+            results[batch_idx] += weights[batch_idx, nth_expert, None] * expert(x[batch_idx])
 
-            results[batch_idx] += weights[
-                batch_idx, nth_expert, None
-            ] * expert(x[batch_idx])
-            return results
-
+        return results
 
 # # Forward
-# x = torch.rand(2, 3, 4)
+# x = torch.rand(2, 1000, 512)
 
-
-# # Experts
-# feedforward = FeedForward(4, 4, 4)
 
 # # Gate
 # # MoE
 # moe = MoELayer(
-#     dim=4, num_experts_per_tok=4, num_experts=8
+#     dim=512, num_experts_per_tok=1, num_experts=8
 # )
 
 # # Forward
 # print(moe(x))
+# print(moe(x).shape)

@@ -17,6 +17,7 @@ model = MM1(
     encoder_dim=512,
     encoder_depth=12,
     encoder_heads=8,
+    use_moe=True
 )
 
 
