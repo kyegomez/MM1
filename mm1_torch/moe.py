@@ -86,12 +86,17 @@ class MoELayer(nn.Module):
         )
 
         results = torch.zeros_like(x)
-        
+
         for i, expert in enumerate(self.experts):
-            batch_idx, nth_expert, _ = torch.where(selected_experts == i)
-            results[batch_idx] += weights[batch_idx, nth_expert, None] * expert(x[batch_idx])
+            batch_idx, nth_expert, _ = torch.where(
+                selected_experts == i
+            )
+            results[batch_idx] += weights[
+                batch_idx, nth_expert, None
+            ] * expert(x[batch_idx])
 
         return results
+
 
 # # Forward
 # x = torch.rand(2, 1000, 512)

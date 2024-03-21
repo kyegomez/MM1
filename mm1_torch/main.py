@@ -14,7 +14,6 @@ from mm1_torch.resblock_text import TextResBlock1d
 # from typing import Optional
 
 
-
 # def create_moe_layer(
 #     embed_dim: int = 512,
 #     moe_expert_count: int = 4,
@@ -389,14 +388,18 @@ class DecoderLLM(nn.Module):
 
         """
         if self.use_feedforward:
-            for attn_layer, ffn in zip(self.attn_layers, self.ffn_layers):
+            for attn_layer, ffn in zip(
+                self.attn_layers, self.ffn_layers
+            ):
                 attn, _ = attn_layer(x)
                 attn = attn + x
                 expert = ffn(attn)
                 x = attn + expert
-                
-        else: 
-            for attn_layer, expert_layer in zip(self.attn_layers, self.expert_layers):
+
+        else:
+            for attn_layer, expert_layer in zip(
+                self.attn_layers, self.expert_layers
+            ):
                 attn, _ = attn_layer(x)
                 attn = attn + x
                 expert = expert_layer(attn)
