@@ -2,8 +2,12 @@ import torch
 from mm1_torch.main import MM1
 
 # Tensors
-x = torch.randint(0, 100, (1, 512))  # Create a random tensor of shape (1, 512)
-img = torch.randn(1, 3, 224, 224)  # Create a random image tensor of shape (1, 3, 224, 224)
+x = torch.randint(
+    0, 100, (1, 512)
+)  # Create a random tensor of shape (1, 512)
+img = torch.randn(
+    1, 3, 224, 224
+)  # Create a random image tensor of shape (1, 3, 224, 224)
 
 # Create a model
 model = MM1(
@@ -18,10 +22,12 @@ model = MM1(
     encoder_depth=12,  # Number of encoder transformer layers
     encoder_heads=8,  # Number of encoder attention heads
     use_moe=True,  # Whether to use mixture-of-experts
-    return_logits=True  # Whether to return logits or probabilities
+    return_logits=True,  # Whether to return logits or probabilities
 )
 
 # Forward
 out = model(x, img)  # Forward pass through the model
-print(out.shape)  # Print the shape of the output tensor (torch.Size([2, 3, 512]))
+print(
+    out.shape
+)  # Print the shape of the output tensor (torch.Size([2, 3, 512]))
 print(out)  # Print the output tensor
