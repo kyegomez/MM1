@@ -24,46 +24,37 @@ def identity(t, *args, **kwargs):
 
 
 # small helper modules
-
-
-def posemb_sincos_2d(
-    h: int,
-    w: int,
-    dim: int,
-    temperature: int = 10000,
-    dtype=torch.float32,
-):
+def posemb_sincos_1d(patches, temperature=10000, dtype=torch.float32):
     """
-    Generates positional embeddings using sine and cosine functions for a 2D grid.
+    Compute positional embeddings using sine and cosine functions for 1D patches.
 
     Args:
-        h (int): Height of the grid.
-        w (int): Width of the grid.
-        dim (int): Feature dimension. Must be a multiple of 4 for sincos embedding.
-        temperature (int, optional): Temperature parameter for the embedding. Defaults to 10000.
-        dtype (torch.dtype, optional): Data type of the output tensor. Defaults to torch.float32.
+        patches (torch.Tensor): Input patches of shape (batch_size, n, dim).
+        temperature (float, optional): Temperature parameter for the positional embeddings. Default is 10000.
+        dtype (torch.dtype, optional): Data type of the output tensor. Default is torch.float32.
 
     Returns:
-        torch.Tensor: Positional embeddings of shape (h * w, dim).
+        torch.Tensor: Positional embeddings of shape (batch_size, n, dim).
 
     Raises:
-        AssertionError: If the feature dimension is not a multiple of 4.
+        AssertionError: If the feature dimension is not a multiple of 2.
 
-    Example:
-        pe = posemb_sincos_2d(10, 10, 32)
     """
-    y, x = torch.meshgrid(
-        torch.arange(h), torch.arange(w), indexing="ij"
+    _, n, dim, device, dtype = (
+        *patches.shape,
+        patches.device,
+        patches.dtype,
     )
+
+    n = torch.arange(n, device=device)
     assert (
-        dim % 4
-    ) == 0, "feature dimension must be multiple of 4 for sincos emb"
-    omega = torch.arange(dim // 4) / (dim // 4 - 1)
+        dim % 2
+    ) == 0, "feature dimension must be multiple of 2 for sincos emb"
+    omega = torch.arange(dim // 2, device=device) / (dim // 2 - 1)
     omega = 1.0 / (temperature**omega)
 
-    y = y.flatten()[:, None] * omega[None, :]
-    x = x.flatten()[:, None] * omega[None, :]
-    pe = torch.cat((x.sin(), x.cos(), y.sin(), y.cos()), dim=1)
+    n = n.flatten()[:, None] * omega[None, :]
+    pe = torch.cat((n.sin(), n.cos()), dim=1)
     return pe.type(dtype)
 
 
@@ -115,11 +106,7 @@ class DAbstractor(nn.Module):
         self.dim_head = dim_head
         self.seq_len = seq_len
 
-        # Positional Embedding
-        # TODO: Implement
-
         # Attention
-        # self.attn = MultiQueryAttention(dim, heads, *args, **kwargs)
         self.attn = Attention(
             dim=dim,
             dim_head=dim_head,
@@ -149,6 +136,11 @@ class DAbstractor(nn.Module):
         b, s, d = x.shape
 
         # Positional Embedding
+        position_tokens = posemb_sincos_1d(x)
+        print(f"Positional Tokens: {position_tokens.shape}")
+
+        # Add positional embeddings
+        x += position_tokens
 
         # Adaptive pool
         x = nn.AdaptiveAvgPool1d(d)(x)

@@ -1,12 +1,19 @@
 import torch
 from mm1_torch.main import DAbstractor
 
-# Random tensors for img
-img = torch.randn(1, 3, 224, 224)
+# Text tensor with shape (batch_size, seq_len, dimension)
+text = torch.randn(2, 10, 768)
 
-# Define the model
-model = DAbstractor(dim=64, depth=3, heads=4, dropout=0.1)
+# Initialize the abstractor
+abstractor = DAbstractor(
+    dim=768,
+    num_heads=8,
+    heads=8,
+    depth=8,
+)
 
-# Forward
-out = model(img)
-print(out)  # torch.Size([1, 3, 64])
+# Forward pass
+out = abstractor(text)
+
+# Output shape: (batch_size, seq_len, dimension)
+print(out)  # torch.Size([2, 10, 768])
