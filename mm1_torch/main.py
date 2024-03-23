@@ -473,6 +473,7 @@ class MM1(nn.Module):
         # Decoder
         x = self.decoder(x + image)
 
+        # Return logits
         if self.return_logits:
             return OutputHead(self.dim, -1)(x)
 

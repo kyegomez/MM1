@@ -37,7 +37,6 @@ model = MM1(
 out = model(x, img)  # Forward pass through the model
 print(out.shape)  # Print the shape of the output tensor (torch.Size([2, 3, 512]))
 print(out)  # Print the output tensor
-
 ```
 
 ### `CAbstractor`
