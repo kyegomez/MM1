@@ -4,8 +4,8 @@ from zeta.nn import FeedForward, OutputHead, threed_to_text
 from zeta.nn.attention import Attention
 from zeta.structs import Encoder, ViTransformerWrapper
 
-from mm1_torch.moe import MoELayer
 from mm1_torch.resblock_text import TextResBlock1d
+from zeta.nn.modules import NormalSparseMoE
 
 
 # constants
@@ -280,7 +280,7 @@ class DecoderLLM(nn.Module):
         # Expert layers
         self.expert_layers = nn.ModuleList(
             [
-                MoELayer(dim, num_experts, num_experts_per_tok)
+                NormalSparseMoE(dim, num_experts, hidden_dim=dim)
                 for _ in range(self.depth)
             ]
         )

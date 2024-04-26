@@ -69,6 +69,6 @@ MIT
 
 ## Todo
 
-- [ ] Implement the deformable attention
+- [x] Implement the deformable attention
 - [ ] Create a training script for Huggingface datasets
 - [ ] Create unit tests for every module
